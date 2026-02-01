@@ -108,4 +108,74 @@ final class RepositoryPullTests: SwiftGitXTest {
         let remoteCommitCount = try remoteRepository.log().reduce(0) { count, _ in count + 1 }
         #expect(localCommitCount == remoteCommitCount)
     }
+
+    // MARK: - Pull Options
+
+    @Test("Pull with fastForwardOnly option - success")
+    func pullFastForwardOnly() async throws {
+        let remoteRepository = mockRepository(suffix: "--remote")
+        try remoteRepository.mockCommit(message: "Initial commit")
+
+        let localDirectory = mockDirectory(suffix: "--local")
+        let localRepository = try await Repository.clone(from: remoteRepository.workingDirectory, to: localDirectory)
+
+        try remoteRepository.mockCommit(message: "Remote commit")
+
+        try await localRepository.pull(option: .fastForwardOnly)
+
+        let localHead = try localRepository.HEAD.target.id
+        let remoteHead = try remoteRepository.HEAD.target.id
+        #expect(localHead == remoteHead)
+    }
+
+    @Test("Pull with fastForwardOnly option - fails when merge required")
+    func pullFastForwardOnlyFails() async throws {
+        let remoteRepository = mockRepository(suffix: "--remote")
+        try remoteRepository.mockCommit(message: "Initial commit")
+
+        let localDirectory = mockDirectory(suffix: "--local")
+        let localRepository = try await Repository.clone(from: remoteRepository.workingDirectory, to: localDirectory)
+
+        try remoteRepository.mockCommit(message: "Remote commit")
+        try localRepository.mockCommit(message: "Local commit")
+
+        await #expect(throws: SwiftGitXError.self) {
+            try await localRepository.pull(option: .fastForwardOnly)
+        }
+    }
+
+    @Test("Pull with noFastForward option - creates merge commit")
+    func pullNoFastForward() async throws {
+        let remoteRepository = mockRepository(suffix: "--remote")
+        try remoteRepository.mockCommit(message: "Initial commit")
+
+        let localDirectory = mockDirectory(suffix: "--local")
+        let localRepository = try await Repository.clone(from: remoteRepository.workingDirectory, to: localDirectory)
+
+        try remoteRepository.mockCommit(message: "Remote commit")
+
+        try await localRepository.pull(option: .noFastForward)
+
+        let headCommit = try localRepository.HEAD.target as! Commit
+        let parents = try headCommit.parents
+        #expect(parents.count == 2)
+    }
+
+    @Test("Pull with rebase option - fast forward case")
+    func pullRebase() async throws {
+        let remoteRepository = mockRepository(suffix: "--remote")
+        try remoteRepository.mockCommit(message: "Initial commit")
+
+        let localDirectory = mockDirectory(suffix: "--local")
+        let localRepository = try await Repository.clone(from: remoteRepository.workingDirectory, to: localDirectory)
+
+        try remoteRepository.mockCommit(message: "Remote commit")
+
+        try await localRepository.pull(option: .rebase)
+
+        // After rebase with no local commits, should match remote
+        let localHead = try localRepository.HEAD.target.id
+        let remoteHead = try remoteRepository.HEAD.target.id
+        #expect(localHead == remoteHead)
+    }
 }
